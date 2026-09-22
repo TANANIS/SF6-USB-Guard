@@ -1,0 +1,26 @@
+# Local device state and recovery records
+Data/
+test-state-*/
+test-results*.txt
+*.log
+*.dmp
+*.etl
+*.tmp
+*.bak
+
+# Local diagnostics and scratch files
+work/
+diagnostics/
+inventory*.json
+guard-preview*.png
+.env
+.env.*
+*.pem
+*.key
+
+# Compiler and editor intermediates (the two portable EXEs are intentional)
+*.obj
+*.pdb
+*.ilk
+.vs/
+.vscode/

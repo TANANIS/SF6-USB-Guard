@@ -1,0 +1,27 @@
+PASS exact four intended roles accepted
+PASS primary keyboard and mouse cannot match policy
+PASS USB receiver parent and hub cannot match policy
+PASS other receiver serial and Logitech excluded
+PASS changed HID usage and instance injection rejected
+PASS missing and duplicate roles fail closed
+PASS game running blocks all changes
+PASS unknown device state blocks all changes
+PASS intent is durable before native disable
+PASS complete apply and restore verified
+PASS pre-disabled state preserved
+PASS partial apply failure rolls back previous changes
+PASS journal write failure occurs before disable
+PASS recovery uses persisted intent after interrupted apply
+PASS disappeared device retains recovery record
+PASS restore failure keeps only failed entries pending
+PASS tampered restore target rejected
+PASS restore blocked during active game
+PASS game starts midway: no further disable or rollback
+PASS atomic journal round trip
+PASS no game: three minute timeout restores
+PASS cancel before game restores
+PASS cancel never restores during game
+PASS game exit grace period then automatic restore
+PASS game restart during grace postpones restore
+PASS long game is not subject to launch timeout
+TOTAL 26 passed, 0 failed. Fake device backend only; no live device mutations.
