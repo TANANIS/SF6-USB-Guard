@@ -3,126 +3,134 @@ using System.IO;
 using System.Linq;
 using System.Drawing;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Windows.Forms;
 
 namespace Sf6Guard {
  public sealed class MainForm : Form {
-  readonly bool preview; readonly WindowsBackend backend=new WindowsBackend();
-  Label status,detail; ListView list; Button check,start,restore; System.Windows.Forms.Timer timer;
-  bool busy;string phase="";
+  public const string SupportUrl="https://buymeacoffee.com/tananis";
+  readonly bool preview;readonly WindowsBackend backend=new WindowsBackend();
+  Label status,detail,summary;Button check,start,restore;System.Windows.Forms.Timer timer;
+  List<Device> snapshot=new List<Device>();ScanReport report;
+  bool busy;volatile bool cancel;string phase="";string lastError="";
   public MainForm(bool mock) {
-   preview=mock;Text="SF6 USB Guard · 已知接收器防護";ClientSize=new Size(820,710);MinimumSize=Size;MaximumSize=Size;
-   AutoScaleMode=AutoScaleMode.Dpi;Font=new Font("Microsoft JhengHei UI",10);BackColor=Color.FromArgb(244,246,249);StartPosition=FormStartPosition.CenterScreen;
-   try{Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);}catch{}
-   var header=new Panel {Location=new Point(0,0),Size=new Size(820,112),BackColor=Color.FromArgb(24,34,53)};Controls.Add(header);
-   var title=new Label {Text="SF6 USB Guard",Font=new Font(Font.FontFamily,24,FontStyle.Bold),ForeColor=Color.White,AutoSize=true,Location=new Point(28,20)};header.Controls.Add(title);
-   header.Controls.Add(new Label {Text="針對已知接收器查詢逾時的可逆防護",AutoSize=true,ForeColor=Color.FromArgb(184,207,227),Location=new Point(31,76)});
-   AddLabel("已知接收器防護  ·  初版，遊戲效果待驗證",28,130,760,25,FontStyle.Bold,Color.FromArgb(120,79,16));
-   status=AddLabel("尚未啟用",28,168,760,34,FontStyle.Bold,Color.FromArgb(27,70,91));status.Font=new Font(Font.FontFamily,17,FontStyle.Bold);
-   detail=AddLabel("開啟本程式不會自動切換 USB。請先關閉遊戲，再啟用防護。",29,210,758,55,FontStyle.Regular,Color.FromArgb(65,76,91));
-   var box=new Panel {Location=new Point(28,273),Size=new Size(764,98),BackColor=Color.FromArgb(255,243,218)};Controls.Add(box);
-   box.Controls.Add(new Label {Text="啟用時會暫停下列 4 個輔助介面，保留鍵盤主要輸入。\r\n音量／多媒體鍵、系統控制键及廠商設定功能可能暫停，遊戲結束後還原。\r\n這是針對已定位問題的防護，無法保證所有 USB 插拔都零卡頓。",Location=new Point(14,12),Size=new Size(735,78),ForeColor=Color.FromArgb(99,69,23)});
-   list=new ListView {Location=new Point(28,387),Size=new Size(764,145),View=View.Details,FullRowSelect=true,GridLines=false,HeaderStyle=ColumnHeaderStyle.Nonclickable};
-   list.Columns.Add("限定的接收器輔助介面",260);list.Columns.Add("識別",220);list.Columns.Add("目前狀態",265);Controls.Add(list);
-   check=ButtonAt("只檢查接收器",28,551,190,delegate{CheckHealth();});
-   start=ButtonAt("啟用防護並啟動 SF6",230,551,330,delegate{StartGuard();});start.BackColor=Color.FromArgb(29,105,108);start.ForeColor=Color.White;
-   restore=ButtonAt("還原／結束防護",573,551,219,delegate{Restore();});
-   ButtonAt("開啟紀錄資料夾",28,616,190,delegate{Directory.CreateDirectory(Program.Data.DirectoryPath);Process.Start(new ProcessStartInfo(Program.Data.DirectoryPath){UseShellExecute=true});});
-   AddLabel("關閉視窗後，已啟動的防護仍會等遊戲結束再還原。\r\n不自動開機啟動、不修改遊戲；接收器換埠後請重新啟用防護。",235,616,557,64,FontStyle.Regular,Color.FromArgb(87,99,116));
+   preview=mock;Text="SF6 USB Guard";ClientSize=new Size(620,440);FormBorderStyle=FormBorderStyle.FixedSingle;MaximizeBox=false;
+   AutoScaleMode=AutoScaleMode.Dpi;Font=new Font("Microsoft JhengHei UI",10);BackColor=Color.FromArgb(246,248,250);StartPosition=FormStartPosition.CenterScreen;
+   var header=new Panel{Dock=DockStyle.Top,Height=100,BackColor=Color.FromArgb(24,34,53)};Controls.Add(header);
+   header.Controls.Add(new Label{Text="SF6 USB Guard",Font=new Font(Font.FontFamily,23,FontStyle.Bold),ForeColor=Color.White,AutoSize=true,Location=new Point(26,17)});
+   header.Controls.Add(new Label{Text="開局前檢查，結束後還原。",ForeColor=Color.FromArgb(186,207,222),AutoSize=true,Location=new Point(29,65)});
+   summary=LabelAt("正在讀取 USB…",28,119,564,24,10,Color.FromArgb(89,103,119));
+   status=LabelAt("尚未啟用",26,159,567,38,20,Color.FromArgb(28,74,86));
+   detail=LabelAt("先關閉 SF6，再開始防護。",28,210,564,44,10,Color.FromArgb(64,78,94));
+   LabelAt("僅暫停異常輔助介面，可能影響多媒體鍵。",28,266,564,24,10,Color.FromArgb(115,82,27));
+   start=ButtonAt("防護並啟動 SF6",28,301,246,46,StartGuard);start.BackColor=Color.FromArgb(25,104,105);start.ForeColor=Color.White;
+   check=ButtonAt("重新檢查",286,301,138,46,CheckHealth);
+   restore=ButtonAt("還原",436,301,156,46,Restore);
+   ButtonAt("詳細資訊",28,371,126,36,ShowDetails);
+   ButtonAt("請支持我繼續更新",414,371,178,36,delegate{Open(SupportUrl);});
+   LabelAt("v0.2",170,380,237,24,9,Color.FromArgb(101,112,128));
    if(preview){ShowInTaskbar=false;Opacity=0;StartPosition=FormStartPosition.Manual;Location=new Point(-30000,-30000);}
-   Shown+=delegate{if(!preview){RefreshInventory();Tick();}};
-   if(!preview){timer=new System.Windows.Forms.Timer {Interval=1500};timer.Tick+=delegate{Tick();};timer.Start();}
-   FormClosed+=delegate{if(timer!=null)timer.Dispose();};
+   Shown+=async delegate{if(!preview)await CaptureInventory();};
+   if(!preview){timer=new System.Windows.Forms.Timer{Interval=1000};timer.Tick+=delegate{Tick();};timer.Start();}
+   FormClosing+=delegate(object sender,FormClosingEventArgs e){if(busy){e.Cancel=true;SetStatus("處理中","請等待檢查完成，或按「取消」。");}};
+   FormClosed+=delegate{cancel=true;if(timer!=null)timer.Dispose();};
   }
-  Label AddLabel(string s,int x,int y,int w,int h,FontStyle style,Color color) {var l=new Label{Text=s,Location=new Point(x,y),Size=new Size(w,h),ForeColor=color,Font=new Font(Font.FontFamily,10,style)};Controls.Add(l);return l;}
-  Button ButtonAt(string s,int x,int y,int w,Action click) {var b=new Button{Text=s,Location=new Point(x,y),Size=new Size(w,46),FlatStyle=FlatStyle.Flat,BackColor=Color.White,Cursor=Cursors.Hand};b.FlatAppearance.BorderColor=Color.FromArgb(204,212,222);b.Click+=delegate{click();};Controls.Add(b);return b;}
-  void SetStatus(string a,string b){status.Text=a;detail.Text=b;}
-  void RefreshInventory() {
-   try {Populate(backend.List());}catch(Exception ex){SetStatus("無法讀取裝置",ex.Message);}
+  Label LabelAt(string text,int x,int y,int w,int h,int size,Color color){var l=new Label{Text=text,Location=new Point(x,y),Size=new Size(w,h),ForeColor=color,Font=new Font(Font.FontFamily,size,size>=20?FontStyle.Bold:FontStyle.Regular)};Controls.Add(l);return l;}
+  Button ButtonAt(string text,int x,int y,int w,int h,Action action){var b=new Button{Text=text,Location=new Point(x,y),Size=new Size(w,h),BackColor=Color.White,FlatStyle=FlatStyle.Flat,Cursor=Cursors.Hand};b.FlatAppearance.BorderColor=Color.FromArgb(210,218,226);b.Click+=delegate{action();};Controls.Add(b);return b;}
+  void Open(string target){try{Process.Start(new ProcessStartInfo(target){UseShellExecute=true});}catch(Exception ex){Failure(ex);}}
+  void SetStatus(string title,string text){status.Text=title;detail.Text=text;}
+  void Failure(Exception ex){lastError=ex is AggregateException?((AggregateException)ex).Flatten().InnerExceptions[0].Message:ex.Message;SetStatus("未完成",lastError.Length>65?"請查看「詳細資訊」中的原因。":lastError);}
+  void Populate(List<Device> all){snapshot=all;summary.Text=all.Count(d=>Policy.Usb(d.Id))+" 個 USB 裝置  ·  "+all.Count(Policy.Hid)+" 個 HID 介面";}
+  async Task CaptureInventory(){Busy(true);try{Populate(await Task.Run(()=>backend.List()));}catch(Exception ex){Failure(ex);}finally{Busy(false);}}
+  void Tick(){
+   try{
+    var j=Program.Data.Load();bool owner=Program.GuardianActive(),game=backend.GameRunning();
+    bool pending=j!=null&&j.Entries.Any(e=>e.RestoreNeeded);
+    if(owner&&j==null){start.Enabled=check.Enabled=restore.Enabled=false;SetStatus("其他版本正在防護","請先透過原版本完成還原。" );return;}
+    if(!busy){start.Enabled=!owner&&!pending&&!game;check.Enabled=!owner&&!pending&&!game;restore.Enabled=(owner||pending)&&!game;}
+    if(j!=null&&(owner||pending||phase!=j.Phase)){
+     if(j.Report!=null)report=j.Report;
+     if(owner)SetStatus(j.Phase=="Active"?"防護中":j.Phase=="Ready"?"防護已就緒":j.Phase=="Scanning"?"檢查中":"處理中",Short(j.Message));
+     else if(pending)SetStatus("需要還原","先結束 SF6，再按「還原」。");
+     else if(j.Phase=="Restored")SetStatus("已還原","本次變更已還原。");
+     else if(j.Phase=="NoChanges")SetStatus("未啟用防護","沒有可自動處理的異常介面。");
+     else if(j.Phase=="Failed"){lastError=j.Message;SetStatus("未啟用",Short(j.Message));}
+     phase=j.Phase;
+    }else if(!busy&&game&&!owner&&!pending)SetStatus("SF6 正在執行","先結束遊戲，再開始防護。");
+   }catch(Exception ex){start.Enabled=check.Enabled=false;if(!busy)restore.Enabled=false;Failure(ex);}
   }
-  void Populate(List<Device> all) {
-   list.Items.Clear();for(int i=0;i<4;i++) {
-    var d=all.FirstOrDefault(x=>Policy.Allowed(x) && Policy.Role(x.Id)==i);
-    var item=new ListViewItem(Policy.Labels[i]);item.SubItems.Add(Policy.Roles[i]);item.SubItems.Add(d==null?"未找到":d.State=="Enabled"?"已啟用":d.State=="Disabled"?"已暫停":"狀態異常");list.Items.Add(item);
+  static string Short(string text){return (text??"").Length>65?"請查看「詳細資訊」。":text;}
+  void Busy(bool value){busy=value;start.Enabled=check.Enabled=!value;restore.Enabled=value;restore.Text=value?"取消":"還原";if(value)cancel=false;else Tick();}
+  async void CheckHealth(){
+   if(busy||backend.GameRunning()||Program.GuardianActive())return;
+   Busy(true);lastError="";SetStatus("檢查中","正在檢查目前 USB，不會停用裝置。");
+   try{
+    report=await Task.Run(()=>new Scanner(backend,new ProcessProbe()).Run(()=>cancel||Program.GuardianActive(),delegate(int done,int total){BeginInvoke(new Action(()=>SetStatus("檢查中",done+" / "+total+" 個 HID 介面")));}));
+    Populate(report.Snapshot);
+    int count=report.Targets().Count;
+    SetStatus(count>0?"找到 "+count+" 個可處理介面":"未找到可處理介面",count>0?"按「防護並啟動 SF6」重新確認並套用。":"未套用防護；詳細結果可在下方查看。");
+   }catch(Exception ex){Failure(ex);}finally{Busy(false);}
+  }
+  Process Elevated(string mode){return Process.Start(new ProcessStartInfo(Application.ExecutablePath,mode){UseShellExecute=true,Verb="runas",WorkingDirectory=Program.Root,WindowStyle=ProcessWindowStyle.Hidden});}
+  async void StartGuard(){
+   if(busy||backend.GameRunning()||Program.GuardianActive())return;
+   Busy(true);lastError="";SetStatus("準備防護","允許管理員權限後開始檢查。");
+   Process worker=null;string session=null;
+   try{
+    var before=Program.Data.Load();string old=before==null?null:before.Session;
+    worker=Elevated("--guard");DateTime end=DateTime.UtcNow.AddSeconds(120);Journal ready=null;
+    while(DateTime.UtcNow<end){
+     await Task.Delay(200);Journal j=null;try{j=Program.Data.Load();}catch(IOException){}
+     if(j!=null&&j.Session!=old){
+      session=j.Session;if(j.Report!=null){report=j.Report;Populate(report.Snapshot);}
+      if(cancel)File.WriteAllText(Program.Signal(session),"cancel");
+      if(j.Phase=="Ready"){ready=j;break;}
+      if(j.Phase=="NoChanges"){SetStatus("未啟用防護","沒有可自動處理的異常介面；可自行啟動 SF6。");return;}
+      if(j.Phase=="Failed"||j.Phase=="RecoveryNeeded")throw new InvalidOperationException(j.Message);
+      SetStatus(j.Phase=="Scanning"?"檢查中":"準備防護",Short(j.Message));
+     }
+     if(worker.HasExited)throw new InvalidOperationException("防護程序已結束，請查看詳細資訊。");
+    }
+    if(ready==null)throw new InvalidOperationException("準備逾時，未啟動 SF6。");
+    if(cancel){File.WriteAllText(Program.Signal(ready.Session),"cancel");SetStatus("已取消","等待還原本次變更。");return;}
+    Process.Start(new ProcessStartInfo("steam://rungameid/1364780"){UseShellExecute=true});
+    SetStatus("等待 SF6 啟動","3 分鐘未啟動會自動還原。");
+   }catch(Exception ex){Failure(ex);if(session!=null)try{File.WriteAllText(Program.Signal(session),"cancel");}catch{}}
+   finally{if(worker!=null)worker.Dispose();Busy(false);}
+  }
+  async void Restore(){
+   if(busy){cancel=true;SetStatus("正在取消","請稍候。");return;}
+   if(backend.GameRunning())return;
+   Busy(true);
+   try{
+    if(Program.GuardianActive()){var j=Program.Data.Load();if(j!=null)File.WriteAllText(Program.Signal(j.Session),"cancel");}
+    else using(var p=Elevated("--restore")){await Task.Run(()=>p.WaitForExit());}
+   }catch(Exception ex){Failure(ex);}finally{Busy(false);}
+  }
+  void ShowDetails(){
+   using(var f=new Form{Text="裝置與詳細資訊",Size=new Size(860,620),StartPosition=FormStartPosition.CenterParent,Font=Font}){
+    var grid=new ListView{Dock=DockStyle.Fill,View=View.Details,FullRowSelect=true,HideSelection=false};
+    grid.Columns.Add("裝置／介面",330);grid.Columns.Add("用途",170);grid.Columns.Add("檢查結果",290);
+    foreach(var d in snapshot){
+     var item=report==null?null:report.Items.FirstOrDefault(x=>Policy.Same(x.Device,d));
+     string result=item==null?"未查詢":item.Note;
+     if(item!=null&&item.First!=null)result+=" ("+item.First.Kind+", "+item.First.Milliseconds+" ms)";
+     var row=new ListViewItem(d.Name??d.Id);row.SubItems.Add(Policy.Usb(d.Id)?"USB 裝置":Policy.Allowed(d)?Policy.Auxiliary(d):"保留／不自動停用");row.SubItems.Add(result);row.Tag=d;grid.Items.Add(row);
+    }
+    var info=new TextBox{Dock=DockStyle.Bottom,Height=142,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical,Text="僅在同一輔助介面連續兩次查詢過慢或逾時時停用。主要輸入與未知用途介面不自動停用。\r\n不能保證所有 USB 變更都不凍結；新插入或換埠的裝置需要結束遊戲後重新檢查。\r\n"+(lastError==""?"點選裝置查看識別資訊。":"最近訊息："+lastError)};
+    grid.SelectedIndexChanged+=delegate{if(grid.SelectedItems.Count>0){var d=(Device)grid.SelectedItems[0].Tag;info.Text=(d.Name??"")+"\r\n"+d.Id+"\r\n父裝置："+d.Parent+"\r\nUsage："+Policy.Usage(d)+"  狀態："+d.State+"\r\n最近訊息："+lastError;}};
+    var footer=new FlowLayoutPanel{Dock=DockStyle.Bottom,Height=44};
+    var log=new Button{Text="開啟紀錄",Width=120,Height=32};log.Click+=delegate{Directory.CreateDirectory(Program.Data.DirectoryPath);Open(Program.Data.DirectoryPath);};footer.Controls.Add(log);
+    var guide=new Button{Text="使用說明",Width=120,Height=32};guide.Click+=delegate{Open(Path.Combine(Program.Root,"使用說明.md"));};footer.Controls.Add(guide);
+    f.Controls.Add(grid);f.Controls.Add(info);f.Controls.Add(footer);f.ShowDialog(this);
    }
   }
-  void Tick() {
-   if(busy)return;
-   try {
-    var j=Program.Data.Load();bool owner=Program.GuardianActive();bool game=backend.GameRunning();
-    bool pending=j!=null && j.Entries.Any(e=>e.RestoreNeeded);
-    start.Enabled=!owner && !pending && !game;check.Enabled=!owner && !game;restore.Enabled=(owner||pending) && !game;
-    if(j!=null && (owner||pending||phase!=j.Phase)) {
-     if(owner)SetStatus(j.Phase=="Active"?"防護中":j.Phase=="Ready"?"防護已準備":"處理中",j.Message);
-     else if(pending)SetStatus("有介面待還原",j.Message+"。請關閉遊戲並按還原。");
-     else if(j.Phase=="Restored")SetStatus("已還原",j.Message);
-     else if(j.Phase=="Failed")SetStatus("未啟用",j.Message);
-     if(phase!=j.Phase){RefreshInventory();phase=j.Phase;}
-    } else if(game && !owner && !pending)SetStatus("遊戲已開啟，尚未防護","請先關閉遊戲，再由這裡啟用防護；對戰中不切換裝置。");
-   }catch(Exception ex){start.Enabled=false;check.Enabled=false;restore.Enabled=false;SetStatus("請檢查還原紀錄",ex.Message+"。不要刪除 Data 資料夾。");}
+  public void RenderPreview(string file){
+   Populate(Tests.Devices());SetStatus("尚未啟用 · 示意畫面","USB 清單已就緒。此預覽使用模擬資料。");
+   Show();Application.DoEvents();using(var bmp=new Bitmap(Width,Height)){DrawToBitmap(bmp,new Rectangle(0,0,Width,Height));bmp.Save(file);}Hide();
   }
-  void Busy(bool value){busy=value;check.Enabled=start.Enabled=restore.Enabled=!value;if(!value)Tick();}
-  async void CheckHealth() {
-   if(backend.GameRunning()||Program.GuardianActive())return;
-   Busy(true);SetStatus("檢查中","只查詢已知接收器；不停用或重新啟動裝置。");
-   try {
-    var devices=backend.List().Where(Policy.Allowed).ToList();Policy.Validate(devices);Populate(devices);
-    if(devices.Any(d=>d.State=="Disabled"))throw new InvalidOperationException("有介面已停用，無法完成健康檢查。請先處理還原或既有設定。");
-    string exe=Path.Combine(Program.Root,"HidProbe.exe");
-    string text=await Task.Run(delegate {
-     var p=Process.Start(new ProcessStartInfo(exe){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true});
-     var read=p.StandardOutput.ReadToEndAsync();var err=p.StandardError.ReadToEndAsync();
-     DateTime deadline=DateTime.UtcNow.AddSeconds(15);
-     while(!p.WaitForExit(200)) {
-      if(backend.GameRunning()||DateTime.UtcNow>=deadline){p.Kill();p.WaitForExit();p.Dispose();throw new InvalidOperationException("遊戲已啟動或檢查逾時，已結束檢查工具。");}
-     }
-     string output=read.Result+err.Result;p.Dispose();return output;
-    });
-    Program.Data.Log("Probe:\r\n"+text);
-    int success=0;foreach(string line in text.Split('\n'))if(line.Contains("ok=1") && line.IndexOf("vid_36b0&pid_3002",StringComparison.OrdinalIgnoreCase)>=0)success++;
-    if(text.Contains("PENDING_") || success!=4)SetStatus("接收器查詢異常","已記錄查詢結果。可於開遊戲前啟用四介面防護，效果仍需在訓練模式確認。");
-    else SetStatus("目前回覆正常","四個輔助介面均成功回覆；本次檢查不保證後續不再逾時。尚未啟用防護。");
-   }catch(Exception ex){SetStatus("檢查未完成",ex.Message);}finally{Busy(false);}
-  }
-  Process Elevated(string mode) {return Process.Start(new ProcessStartInfo(Application.ExecutablePath,mode){UseShellExecute=true,Verb="runas",WorkingDirectory=Program.Root,WindowStyle=ProcessWindowStyle.Hidden});}
-  async void StartGuard() {
-   if(backend.GameRunning()||Program.GuardianActive())return;
-   Busy(true);SetStatus("準備防護","Windows 將要求管理員權限；成功後才啟動遊戲。");
-   Process worker=null;
-   try {
-    var before=Program.Data.Load();string old=before==null?null:before.Session;
-    worker=Elevated("--guard");DateTime deadline=DateTime.UtcNow.AddSeconds(90);Journal ready=null;
-    while(DateTime.UtcNow<deadline) {
-     await Task.Delay(200);Journal j=null;try{j=Program.Data.Load();}catch(IOException){}
-     if(j!=null && j.Session!=old) {
-      if(j.Phase=="Ready"){ready=j;break;}
-      if(j.Phase=="Failed"||j.Phase=="RecoveryNeeded")throw new InvalidOperationException(j.Message);
-     }
-     if(worker.HasExited)throw new InvalidOperationException("防護程序已結束，請查看紀錄。");
-    }
-    if(ready==null)throw new InvalidOperationException("準備尚未完成；不啟動遊戲，請查看防護狀態。");
-    Process.Start(new ProcessStartInfo("steam://rungameid/1364780"){UseShellExecute=true});
-    SetStatus("已送出啟動要求","等待 Steam 啟動遊戲；3 分鐘未啟動會自動還原。");
-   }catch(System.ComponentModel.Win32Exception ex){SetStatus("未啟動",ex.NativeErrorCode==1223?"已取消管理員權限要求。":ex.Message);CancelWaiting();}
-    catch(Exception ex){SetStatus("未啟動",ex.Message);CancelWaiting();}
-   finally{if(worker!=null)worker.Dispose();Busy(false);RefreshInventory();}
-  }
-  void CancelWaiting(){try{var j=Program.Data.Load();if(j!=null && Program.GuardianActive())File.WriteAllText(Program.Signal(j.Session),"cancel");}catch{}}
-  async void Restore() {
-   if(backend.GameRunning()){SetStatus("請先結束遊戲","還原會造成裝置變更，遊戲結束後才進行。");return;}
-   Busy(true);
-   try {
-    if(Program.GuardianActive()){CancelWaiting();SetStatus("正在結束防護","守護程序將還原本次變更的介面。");}
-    else {using(var p=Elevated("--restore")){await Task.Run(delegate{p.WaitForExit();});}RefreshInventory();}
-   }catch(Exception ex){SetStatus("還原未完成",ex.Message);}finally{Busy(false);}
-  }
-  public void RenderPreview(string file) {
-   Populate(Tests.Devices());SetStatus("尚未啟用 · 示意畫面","四個目標介面已辨識。此預覽使用模擬資料，沒有變更任何 USB 裝置。");
-   Show();Application.DoEvents();
-   using(var bmp=new Bitmap(Width,Height)){DrawToBitmap(bmp,new Rectangle(0,0,Width,Height));bmp.Save(file);}Hide();
-  }
-  protected override bool ShowWithoutActivation {get{return preview;}}
+  protected override bool ShowWithoutActivation{get{return preview;}}
  }
 }

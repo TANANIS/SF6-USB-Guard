@@ -1,27 +1,46 @@
-PASS exact four intended roles accepted
-PASS primary keyboard and mouse cannot match policy
-PASS USB receiver parent and hub cannot match policy
-PASS other receiver serial and Logitech excluded
-PASS changed HID usage and instance injection rejected
-PASS missing and duplicate roles fail closed
-PASS game running blocks all changes
-PASS unknown device state blocks all changes
-PASS intent is durable before native disable
-PASS complete apply and restore verified
-PASS pre-disabled state preserved
-PASS partial apply failure rolls back previous changes
-PASS journal write failure occurs before disable
-PASS recovery uses persisted intent after interrupted apply
-PASS disappeared device retains recovery record
-PASS restore failure keeps only failed entries pending
-PASS tampered restore target rejected
-PASS restore blocked during active game
-PASS game starts midway: no further disable or rollback
+PASS multiple vendors and serials supported
+PASS primary keyboard mouse controller touch and unknown vendor preserved
+PASS USB parents and hubs never selected
+PASS mixed usage ambiguous descriptor rejected
+PASS primary compatible IDs override auxiliary usage
+PASS duplicate compatible usage is not ambiguous
+PASS nonleaf and wrong class rejected
+PASS mismatched USB ancestry rejected
+PASS malformed instance and usage rejected
+PASS two slow results required
+PASS fast failures and denied access never trigger disabling
+PASS slow primary input still cannot be selected
+PASS already disabled auxiliary left alone
+PASS scan covers USB HID and reports other USB without querying it
+PASS no anomalies produces no targets
+PASS scan cancelled before any query
+PASS running game blocks scan
+PASS game starts during scan aborts plan
+PASS scan inventory change aborts plan
+PASS protocol accepts measured slow response
+PASS protocol distinguishes timeout from tool failure
+PASS protocol fast access failure is not a slow device
+PASS malformed helper output rejected
+PASS running game blocks apply
+PASS empty duplicate and unknown-state targets rejected
+PASS new USB or changed parent aborts stale plan
+PASS targets must belong to captured inventory
+PASS durable intent before each change
+PASS apply and restore only selected auxiliaries
+PASS partial failure rolls back
+PASS cancellation during apply rolls back and stops further changes
+PASS journal failure prevents native change
+PASS missing device preserves recovery intent
+PASS failed enable preserves only unresolved entries
+PASS tampered restore cannot enable USB parent
+PASS changed usage prevents restore to different device type
+PASS v0.1 pending journal can restore original known receiver
+PASS legacy journal cannot broaden scope
+PASS game starts during apply leaves recoverable state
+PASS restore blocked while game running
+PASS coverage detects unplug and reenable
 PASS atomic journal round trip
-PASS no game: three minute timeout restores
-PASS cancel before game restores
-PASS cancel never restores during game
-PASS game exit grace period then automatic restore
-PASS game restart during grace postpones restore
-PASS long game is not subject to launch timeout
-TOTAL 26 passed, 0 failed. Fake device backend only; no live device mutations.
+PASS launch timeout and cancellation restore
+PASS active game ignores cancellation and launch deadline
+PASS exit grace and game restart
+TOTAL 45 passed, 0 failed. Fake device backend only; no live device mutations.

@@ -40,7 +40,13 @@ namespace Sf6Guard {
      if(previous!=null && previous.Entries.Any(e=>e.RestoreNeeded))throw new InvalidOperationException("上次還有待還原的介面，請先按還原。");
      j=new Journal {Session=Guid.NewGuid().ToString("N"),GuardianPid=Process.GetCurrentProcess().Id};
      Data.Log("Preparing session "+j.Session);
-     engine.Prepare(j);
+     j.Version=2;j.Phase="Scanning";j.Message="正在檢查 USB";Data.Save(j);
+     j.Report=new Scanner(backend,new ProcessProbe()).Run(delegate{return File.Exists(Signal(j.Session));},delegate(int done,int total){j.Message="檢查中 "+done+" / "+total;Data.Save(j);});
+     Data.Save(j);
+     var targets=j.Report.Targets();
+     if(targets.Count==0){j.Phase="NoChanges";j.Message="未找到可自動處理的異常介面";Data.Save(j);return 0;}
+     if(File.Exists(Signal(j.Session)))throw new OperationCanceledException("已取消防護。");
+     engine.Prepare(j,targets,j.Report.Snapshot,delegate{return File.Exists(Signal(j.Session));});
      var lifetime=new Lifetime(DateTime.UtcNow);DateTime check=DateTime.UtcNow;
      while(true) {
       bool running=backend.GameRunning();
@@ -49,9 +55,8 @@ namespace Sf6Guard {
       if(action=="Active") {
        if(j.Phase!="Active"){j.Phase="Active";j.Message="防護中；遊戲結束後自動還原";Data.Save(j);Data.Log("Game detected");}
        if(DateTime.UtcNow>=check && running) {
-        var current=backend.List().Where(Policy.Allowed).ToList();
-        bool covered=current.Count==4 && current.All(d=>d.State=="Disabled") && current.All(d=>j.Entries.Any(e=>e.Device.Id.Equals(d.Id,StringComparison.OrdinalIgnoreCase)));
-        string message=covered?"防護中；遊戲結束後自動還原":"裝置已變動，防護範圍不完整；本局不再切換裝置，結束後請重開防護";
+        bool covered=engine.Covered(j);
+        string message=covered?"已暫停 "+j.Entries.Count+" 個介面；遊戲結束後還原":"裝置已變更；本局防護範圍不完整";
         if(message!=j.Message){j.Message=message;Data.Save(j);Data.Log(message);}
         check=DateTime.UtcNow.AddSeconds(5);
        }
