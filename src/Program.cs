@@ -15,17 +15,18 @@ namespace Sf6Guard {
   public static bool GuardianActive() {try{using(var m=Mutex.OpenExisting(@"Local\Sf6UsbGuard-DeviceOwner-v1")){try{bool free=m.WaitOne(0);if(free)m.ReleaseMutex();return !free;}catch(AbandonedMutexException){m.ReleaseMutex();return false;}}}catch(WaitHandleCannotBeOpenedException){return false;}}
   [STAThread] static int Main(string[] args) {
    try {
+    L.Load(Path.Combine(Root,"Data","language.txt"),args);
     if(args.Length>0 && args[0]=="--self-test") return Tests.Run(args.Length>1?args[1]:Path.Combine(Root,"test-results.txt"));
     if(args.Length>0 && args[0]=="--inventory") {File.WriteAllText(args[1],new JavaScriptSerializer().Serialize(new WindowsBackend().List()));return 0;}
     if(args.Length>0 && (args[0]=="--guard" || args[0]=="--restore"))return RunGuardian(args[0]=="--restore");
     Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
     if(args.Length>0 && args[0]=="--preview") {using(var f=new MainForm(true)){f.RenderPreview(args[1]);}return 0;}
     bool created;using(var mutex=new Mutex(true,@"Local\Sf6UsbGuard-UI-v1",out created)) {
-     if(!created) {MessageBox.Show("SF6 USB Guard 已經開啟。","SF6 USB Guard");return 0;}
+     if(!created) {MessageBox.Show(L.Text("SF6 USB Guard 已經開啟。"),"SF6 USB Guard");return 0;}
      Application.Run(new MainForm(false));mutex.ReleaseMutex();
     }
     return 0;
-   }catch(Exception ex) {try{Data.Log(ex.ToString());}catch{} MessageBox.Show(ex.Message,"SF6 USB Guard",MessageBoxButtons.OK,MessageBoxIcon.Error);return 1;}
+   }catch(Exception ex) {try{Data.Log(ex.ToString());}catch{} MessageBox.Show(L.Text(ex.Message),"SF6 USB Guard",MessageBoxButtons.OK,MessageBoxIcon.Error);return 1;}
   }
   static bool IsAdmin() {return new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);}
   static int RunGuardian(bool recovery) {
@@ -70,7 +71,7 @@ namespace Sf6Guard {
       // Do not race a running game with a rollback. Leave a durable recovery record.
       if(!backend.GameRunning() && j.Entries.Any(e=>e.RestoreNeeded)) {try{engine.Restore(j);}catch(Exception re){Data.Log(re.ToString());}}
       j.Phase=j.Entries.Any(e=>e.RestoreNeeded)?"RecoveryNeeded":"Failed";j.Message=ex.Message;Data.Save(j);
-     }else {MessageBox.Show(ex.Message,"SF6 USB Guard",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
+     }else {MessageBox.Show(L.Text(ex.Message),"SF6 USB Guard",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
      return 1;
     }finally{mutex.ReleaseMutex();}
    }

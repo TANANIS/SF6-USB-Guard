@@ -43,4 +43,9 @@ PASS atomic journal round trip
 PASS launch timeout and cancellation restore
 PASS active game ignores cancellation and launch deadline
 PASS exit grace and game restart
-TOTAL 45 passed, 0 failed. Fake device backend only; no live device mutations.
+PASS successful checks launch with or without eligible targets
+PASS failed cancelled or incomplete checks cannot launch
+PASS English translates dynamic status and persisted recovery messages
+PASS Traditional Chinese restores original messages
+PASS language preference persists and command line overrides it
+TOTAL 50 passed, 0 failed. Fake device backend only; no live device mutations.
